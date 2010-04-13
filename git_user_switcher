@@ -1,0 +1,111 @@
+#!/usr/bin/env ruby
+# git_user_switcher - switch between a set of github users
+#
+# Bram Swenson <bram@craniumisajar.com> 
+require 'optparse'
+
+@users = { 
+  :noservr => { 
+    :email => 'thoughtobject@gmail.com', 
+    :token => '3316f43534ef8868fbd059cf96f249dc',
+  },
+  :stoneyman => { 
+    :email => 'stoneyman@gmail.com', 
+    :token => 'fa95cf874599ad809bcd4f51671c8b8c',
+  },
+  :bramswenson => { 
+    :email => 'bram@craniumisajar.com', 
+    :token => '5c20426332ebbc9fa41d9bb931afa558',
+  },
+  :snarlysodboxer => { 
+    :email => 'github@davidamick.com', 
+    :token => 'f89d645bb21a5049a545452c1811be8a',
+  },
+	:n8amick => {
+		:email => 'github@nathanamick.com',
+		:token => 'f7adc15ea4a395bef2b7df13c90fd385'
+	}
+}
+
+@options = { :verbose => false }
+
+def log(msg)
+  puts msg if @options[:verbose]
+end
+
+def error_and_exit(msg)
+  puts msg
+  exit(1)
+end
+
+def parse_git_config
+  @config = {}
+  @section = nil
+  lines = File.readlines('.git/config')
+  lines.each do |line|
+    @section = line.gsub!(/[\[\]]/, '').chomp.to_sym if line.match(/[\[\]]/)
+    if line.include?('=')
+      key, value = line.split('=')
+      key, value = key.chomp.strip.to_sym, value.chomp.strip
+      @config[@section] ||= Hash.new
+      @config[@section][key] = value
+    end
+  end
+end
+
+def run_git(command, raise_on_error=false)
+  log "run_git: git #{command}"
+  if !system("git #{command}")
+    raise StandardError, "'git #{command}' failure: #{$?}" if raise_on_error
+  end
+  log "run_git: success"
+end
+
+def git_config?(key, val)
+  section, section_key = key.split('.')
+  section, section_key = section.to_sym, section_key.to_sym
+  return false unless @config.has_key?(section)
+  return false unless @config[section].has_key?(section_key)
+  return false unless @config[section][section_key] == val.to_s
+  true
+end
+
+def git_config_update!(key, val)
+  run_git "config #{key} #{val}" unless git_config?(key, val)
+end
+
+def git_config
+  user = @options[:user]
+  git_config_update! "user.name", user
+  git_config_update! "user.email", @users[user][:email]
+  git_config_update! "github.user", user
+  git_config_update! "github.token", @users[user][:token]
+end
+
+def parse_args
+  OptionParser.new do |opts|
+    opts.banner = "Usage: git_user_switcher [options] <gitcommand> [gitoptions]"
+
+    opts.on("-v", "--verbose", "Run verbosely") do
+      @options[:verbose] = true
+    end
+
+    opts.on("-u", "--user USER", "=N" "The user to run as") do |user|
+      @options[:user] = user.to_sym
+    end
+
+  end.parse!
+  error_and_exit "user option is required!" unless @options[:user]
+  #error_and_exit "git command is required!" unless ARGV.length >= 1
+  error_and_exit "unknown user: #{@options[:user].to_s}" if !@users.has_key?(@options[:user])
+end
+
+
+def run
+  parse_git_config
+  parse_args
+  git_config
+  run_git ARGV.join(' ') if ARGV.length >= 1
+end
+
+run
